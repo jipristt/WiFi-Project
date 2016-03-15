@@ -31,6 +31,8 @@
 #include "ns3/csma-module.h"
 #include "ns3/internet-module.h"
 #include "ns3/channel.h"
+#include "ns3/olsr-helper.h"
+#include "ns3/netanim-module.h"
 //Other libraries
 #include <iostream>
 #include <cstdlib>
@@ -220,14 +222,16 @@ int main (int argc, char *argv[]){
 
     //Set AP in WiFi
     mac.SetType ("ns3::ApWifiMac",
-                 "Ssid", SsidValue (ssid));
+                 "Ssid", SsidValue (ssid),
+                 "BeaconGeneration", BooleanValue (true),
+                 "BeaconInterval", TimeValue(Seconds(2.5)));
     apDevices[i] = wifi.Install (phy, mac, AP[i]);
     std::cout<<"Station "<< i << " installed.." <<std::endl; 
   }
   std::cout<<"All WiFi stations set. \n\n"<<std::endl;   
   
   //Positioning AP
-    std::cout<<"Placing AP devices.."<<std::endl; 
+  std::cout<<"Placing AP devices.."<<std::endl; 
   //===========================================================================
   //Explain:
   //Target: AP_clan (APs), Constant positions
@@ -277,9 +281,16 @@ int main (int argc, char *argv[]){
   std::cout<<"Protocol Stack and WiFi IP assigning.."<<std::endl; 
   InternetStackHelper stack;
   
+  // Enable OLSR 
+  std::cout<<"Enabling OLSR routing on all stations"<<std::endl;
+  OlsrHelper olsr;
+  stack.SetRoutingHelper (olsr);
+  
   char ip_t[] = "10.1.1.0" ; 
   Ipv4AddressHelper address;
   
+  Ipv4InterfaceContainer wifi_int[9];// AP_int[9]; //Keep track of Ipv4 address
+  //NetDeviceContainer Station[9];
   for (int i = 0; i<9; i++){
     //Protocol stack
     stack.Install (STA[i]);
@@ -288,25 +299,30 @@ int main (int argc, char *argv[]){
     //Assign IP address
     ip_t[5] = i+1 + '0';
     
+    NetDeviceContainer Station(apDevices[i],staDevices[i]);
     //AP_i
     address.SetBase (ip_t, "255.255.255.0");
-    address.Assign (apDevices[i]);
-    address.Assign (staDevices[i]);
+    /*AP_int[i] = address.Assign (apDevices[i]);
+    STA_int[i] = address.Assign (staDevices[i]);
+    */
+    wifi_int[i] = address.Assign(Station);
+    
+    //address.NewNetwork ();
     std::cout<<"Station "<< i <<" IPs set.."<< std::endl;     
   }
 
   //Csma IP assigning
   std::cout<<"Csma IP assigning.."<<std::endl;
   address.SetBase ("10.10.0.0", "255.255.255.0");
-  Ipv4InterfaceContainer csmaInterfaces;
-  csmaInterfaces =  address.Assign (csmaDevices);    
+  Ipv4InterfaceContainer csmaInt;
+  csmaInt =  address.Assign (csmaDevices);    
   std::cout<<"IP assigning complete.\n\n"<<std::endl; 
   
   //Point to point ip address
   /*std::cout<<"P2p IP assigning.."<<std::endl; 
   stack.Install (main);
   address.SetBase ("10.10.0.0", "255.255.255.0");
-  Ipv4InterfaceContainer p2pInterfaces;
+  Ipv4InterfaceContainer p2pInt;
   p2pInterfaces = address.Assign (p2pDevices);    
   std::cout<<"IP assigning complete.\n\n"<<std::endl; 
   */  
@@ -319,40 +335,44 @@ int main (int argc, char *argv[]){
   ApplicationContainer serverApps[9];
   ApplicationContainer clientApps[9];
   for (int i =0; i<9; i++){
-    serverApps[i] = echoServer.Install (STA[i].Get (0));
+    serverApps[i] = echoServer.Install (AP[i].Get (0));
     serverApps[i].Start (Seconds (1.0));
-    serverApps[i].Stop (Seconds (10.0));
+    serverApps[i].Stop (Seconds (10.0 +i));
     
-    ip_t[5] = i+1 + '0';
-    std::cout<<"Station "<< i<<" node "<<ip_t<<" to "; 
+    ip_t[5] = i + 1 + '0';
+    std::cout<<"Server: AP_"<< i; 
       
-    UdpEchoClientHelper echoClient (Ipv4Address(ip_t), 9);
+    //UdpEchoClientHelper echoClient (Ipv4Address(ip_t), 9);
+    //UdpEchoClientHelper echoClient (csmaInt.GetAddress (i), 9);
+    UdpEchoClientHelper echoClient (wifi_int[i].GetAddress (0), 9);
     echoClient.SetAttribute ("MaxPackets", UintegerValue (1));
     echoClient.SetAttribute ("Interval", TimeValue (Seconds (1.0)));
     echoClient.SetAttribute ("PacketSize", UintegerValue (1024));
   
     clientApps[i] = echoClient.Install (STA[i].Get (AP_nodes[i]-1));
-    clientApps[i].Start (Seconds (2.0+i));
+    clientApps[i].Start (Seconds (1.0+i));
     clientApps[i].Stop (Seconds (10.0+i));
-    std::cout<<" station "<<i<<" device "<< int(AP_nodes[i]) <<std::endl;
+    std::cout<<" / Client station "<<i<<" device "<< int(AP_nodes[i]) <<std::endl;
   }
   std::cout<<"UDP echo server established.\n\n"<<std::endl; 
   
-  //****************************************************************************
-  //******************* PROBLEM HERE!!! ****************************************
+  /*
   //Create routing table
   std::cout<<"Populatng routing tables.."<<std::endl;
   //Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
   std::cout<<"Routing tables ready.\n\n"<<std::endl; 
-  //****************************************************************************
-      
-   Simulator::Stop (Seconds (20.0));
-   std::cout<<"--------------------"<<std::endl; 
-   std::cout<<"Starting Simulator:"<<std::endl; 
-   std::cout<<"--------------------\n\n"<<std::endl; 
+  */
+  
+  //AnimationInterface anim ("mixed-wireless.xml");
 
-   Simulator::Run ();
-   Simulator::Destroy ();
+  //Simultor bla bla:   
+  Simulator::Stop (Seconds (25.0));
+  std::cout<<"--------------------"<<std::endl; 
+  std::cout<<"Starting Simulator:"<<std::endl; 
+  std::cout<<"--------------------\n\n"<<std::endl; 
+
+  Simulator::Run ();
+  Simulator::Destroy ();
   
  return 0;
 }
