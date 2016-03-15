@@ -1,0 +1,358 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
+/*
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
+//==============================================================================
+//Author: Christos Kyprianou
+//Subject: Wireless Networking
+//==============================================================================
+
+//==============================================================================
+//Libraries and stuff..
+//==============================================================================
+//NS3 libraries
+#include "ns3/core-module.h"
+#include "ns3/point-to-point-module.h"
+#include "ns3/network-module.h"
+#include "ns3/applications-module.h"
+#include "ns3/wifi-module.h"
+#include "ns3/mobility-module.h"
+#include "ns3/csma-module.h"
+#include "ns3/internet-module.h"
+#include "ns3/channel.h"
+//Other libraries
+#include <iostream>
+#include <cstdlib>
+#include <ctime>
+#include <sstream>
+#include <string>
+
+//==============================================================================
+// Network Information:
+//---------------------
+// Multiple AP´s, not connected together. 
+// AP Nodes:
+// ----Test AP: 1-3 nodes (given by user)
+// ----Rest: 1-5 nodes (given by user: all the same or random)
+// Data link:
+// ----Test AP: 2,5,10,56 Mbps (Choise by user)
+// ----Rest: 2,5,10,56 Mbps (all same or random) 
+// Channel Frequencies:
+// ----Test AP: 13 channels on 2Ghz band and 1 channel in 5 Ghz (choise by user)
+// ----Rest: 13 channels on 2Ghz band (set by user - gausian distribution)
+//==============================================================================
+// Simple test - Only close neiburghs test (3x3 grid)
+// 1 test AP + 9 other, each 5m away from their neiburhg (test AP middle)
+//==============================================================================
+//    (-1,1)  /----5m----/ (0,1)    /----5m----/ (1,1)    
+// AP0--(1-5 nodes) |   AP1--(1-5 nodes)  |   AP2--(1-5 nodes)
+//       ---                ---                  ---
+//        |                  |                    |
+//        5m                5m                   5m
+//        |                  |                    |
+//       ---                ---                  ---
+//     (-1,0) /----5m----/ (0,0)  /----5m----/  (1,0)    
+// AP3--(1-5 nodes) |AP4(Test)--(1-3 nodes) |   AP5--(1-5 nodes)
+//       ---                ---                  ---
+//        |                  |                    |
+//        5m                5m                   5m
+//        |                  |                    |
+//       ---                ---                  ---                
+//    (-1,-1) /----5m----/ (0,-1)  /----5m----/ (1,-1)              
+// AP6--(1-5 nodes) |  AP7--(1-3 nodes)  |  AP8--(1-5 nodes)      
+//==============================================================================
+// Extended Version - Neiburghs of neiburghs included (5x5 grid)
+// 1 test AP + 24 other, each 5m away from their neiburhg                         
+// AP can take several possitions
+//==============================================================================
+
+
+//==============================================================================
+// Fun part begins:
+//==============================================================================
+using namespace ns3;
+NS_LOG_COMPONENT_DEFINE ("WiFi Project");
+
+//==============================================================================
+//Function for assigning number of nodes/devices to each AP:
+//==============================================================================
+void NodeStruct(uint8_t nTest, uint8_t nOther, uint32_t* p){
+   std::srand(std::time(0)); // use current time as seed for random generator
+  //Set number of nodes for other APs
+  if (nOther >5 || nOther<1) //If between 1-5 set number else set random number
+    for (int i=0 ; i<9; i++)    
+      p[i] = std::rand()%5 +1;
+  else
+    for (int i=0 ; i<9; i++) 
+      p[i] = nOther;
+  //Set number of nodes for Test AP
+  if (nTest>3 || nTest<1) //If between 1-3 ok else set 1
+    p[4] = 1;
+  else
+    p[4] = nTest;
+  //Print number of nodes for every AP
+  std::cout << "System properties: \n--------------------\n" 
+            << "Nodes/Devices per AP: " << std::endl;
+  for (int i=0;i<9;i++)
+    if (i==4)
+      std::cout << "  AP " <<  i <<" (Test AP): " << int(p[i]) << std::endl;
+    else
+      std::cout << "  AP " <<  i <<": " << int(p[i]) << std::endl;
+   std::cout<<"\n"<<std::endl;
+}
+
+
+//==============================================================================
+//Main
+//==============================================================================
+int main (int argc, char *argv[]){
+  
+  //Initialize stuff
+  uint32_t AP_nodes[] = {1,1,1,1,1,1,1,1,1}; //AP table: shows number of devices per AP
+  int nTest = 1; //Initial number of devices on test AP
+  int nOther = 1;// Inital number of devices for oteher APs
+  //Wifi frequency bands: (1 channel in 5Mhz band and channels 1-13 for 2.4Ghz)
+  //int freq_chans[] = {5200, 2412, 2417, 2422, 2427, 2432, 2437, 2442, 2447, 2452, 2457, 2462, 2467, 2472}; 
+
+  //User defined stuff
+  CommandLine cmd;
+  cmd.AddValue ("nTest", "Number of nodes/devics on tested AP \n Accepted values: 1-3" , nTest);
+  cmd.AddValue ("nOther", "Number of nodes/devices connected on other APs \n Accepted values: 1-5 or 0:random. ", nOther);
+  cmd.Parse (argc,argv);
+
+  //Enabling some logs
+  LogComponentEnable ("UdpEchoClientApplication", LOG_LEVEL_INFO);
+  LogComponentEnable ("UdpEchoServerApplication", LOG_LEVEL_INFO);
+
+  //Assign number of nodes to each AP:
+  NodeStruct( nTest, nOther, AP_nodes);
+  std::cout<<"Creating nodes.."<<std::endl; 
+  //Create WiFi Stations:
+  NodeContainer AP[9], STA[9], AP_clan; //AP: Acces Point devices | AP_n: nodes/devices per AP 
+  for (int i = 0; i<9; i++){
+    STA[i].Create(AP_nodes[i]);
+    AP[i].Create(1);
+    AP_clan.Add (AP[i].Get (0));
+  }
+  
+  std::cout<<"Creating nodes Complete.."<<std::endl; 
+
+  //*************************ATTENTION:**************************
+  //In order to make system fully connected:
+  //Connect APs together either directly through CSMA connection
+  //OR  through P2P connection with ´main´ node  
+  //Uncomment  the section of option and commend the other one
+  //*************************************************************
+  
+  //CSMA connection between APs
+  std::cout<<"Installing csma connection.."<<std::endl;
+  CsmaHelper csma;
+  csma.SetChannelAttribute ("DataRate", StringValue ("100Mbps"));
+  csma.SetChannelAttribute ("Delay", TimeValue (NanoSeconds (6560)));
+
+  NetDeviceContainer csmaDevices;
+  csmaDevices = csma.Install (AP_clan);
+  std::cout<<"Csma connection installed.\n\n"<<std::endl; 
+  
+  // P2P conncection between APs and main
+  /*NodeContainer  main;
+  main.Create(1);
+  std::cout<<"Installing p2p connection.."<<std::endl; 
+  PointToPointHelper pointToPoint;
+  pointToPoint.SetDeviceAttribute ("DataRate", StringValue ("5Mbps"));
+  pointToPoint.SetChannelAttribute ("Delay", StringValue ("2ms"));
+  
+  NetDeviceContainer p2pDevices;
+  for (int i = 0; i<9; i++){
+    p2pDevices.Add(pointToPoint.Install (main.Get(0),AP_clan.Get(i)));
+    std::cout<<"main to AP_"<<i<<" complete.."<<std::endl;
+  }
+  std::cout<<"P2p connection installed.\n\n"<<std::endl; 
+  */
+    
+  std::cout<<"Installing WiFi connections:"<<std::endl; 
+  
+  //PHY layer config
+  std::cout<<"Configuring physical layer.."<<std::endl; 
+  
+  YansWifiChannelHelper channel = YansWifiChannelHelper::Default ();
+  YansWifiPhyHelper phy = YansWifiPhyHelper::Default ();
+  phy.SetChannel (channel.Create ());
+  
+  //MAC layer config
+  std::cout<<"Configuring MAC layer.."<<std::endl; 
+  WifiHelper wifi = WifiHelper::Default ();
+  wifi.SetRemoteStationManager ("ns3::AarfWifiManager"); //Rate control algorithm
+  
+  NqosWifiMacHelper mac = NqosWifiMacHelper::Default (); //No Qos
+  Ssid ssid;
+  std::string txt = "AP_";
+  std::string SSIDtxt;
+  
+  NetDeviceContainer staDevices[9];
+  NetDeviceContainer apDevices[9];
+
+  //Setting wifi Devices
+  std::cout<<"Setting WiFi devices.."<<std::endl; 
+  for (int i=0;i<9;i++){
+    //Set station nodes in WiFi 
+    std::stringstream sstm;
+    sstm << txt << i;
+    SSIDtxt = sstm.str();
+    //std::cout<<SSIDtxt<<std::endl;
+    ssid = Ssid (SSIDtxt);
+    std::cout<<ssid<<std::endl;
+    mac.SetType ("ns3::StaWifiMac",
+                 "Ssid", SsidValue (ssid),
+                 "ActiveProbing", BooleanValue (false));
+    staDevices[i] = wifi.Install (phy, mac, STA[i]);
+
+    //Set AP in WiFi
+    mac.SetType ("ns3::ApWifiMac",
+                 "Ssid", SsidValue (ssid));
+    apDevices[i] = wifi.Install (phy, mac, AP[i]);
+    std::cout<<"Station "<< i << " installed.." <<std::endl; 
+  }
+  std::cout<<"All WiFi stations set. \n\n"<<std::endl;   
+  
+  //Positioning AP
+    std::cout<<"Placing AP devices.."<<std::endl; 
+  //===========================================================================
+  //Explain:
+  //Target: AP_clan (APs), Constant positions
+  //Start placing at position (minX,minY)-> (5,5)
+  //Every AP has distance 5 up and down and 3 AP in every row
+  //===========================================================================
+  MobilityHelper mobility; 
+  mobility.SetPositionAllocator ("ns3::GridPositionAllocator",
+                               "MinX", DoubleValue (5),
+                               "MinY", DoubleValue (5),
+                               "DeltaX", DoubleValue (5.0),
+                               "DeltaY", DoubleValue (5.0),
+                               "GridWidth", UintegerValue (3),
+                               "LayoutType", StringValue ("RowFirst"));
+  //Apply to AP
+  mobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
+  mobility.Install (AP_clan); 
+  
+  
+  //Positioning STA
+    std::cout<<"Placing STA devices.."<<std::endl; 
+  //===========================================================================
+  //Explain:
+  //Target: STA (per AP), moving positions
+  //Place all STA next to AP ( start withhighest signal quality)
+  //Every STA can move in a box 4x4 around its AP
+  //===========================================================================
+  int minp,maxp;
+  for (int i=0; i<9; i++){
+    mobility.SetPositionAllocator ("ns3::GridPositionAllocator",
+                               "MinX", DoubleValue (i*5+5),
+                               "MinY", DoubleValue (i*5+5),
+                               "DeltaX", DoubleValue (0.0),
+                               "DeltaY", DoubleValue (0.0),
+                               "GridWidth", UintegerValue (6),
+                               "LayoutType", StringValue ("RowFirst"));
+    maxp = 5*(i+1)+2;
+    minp = 5*(i+1)-2;
+    mobility.SetMobilityModel ("ns3::RandomWalk2dMobilityModel",
+                   "Bounds", RectangleValue (Rectangle (minp, maxp, minp, maxp)));
+    mobility.Install (STA[i]); 
+  }
+  std::cout<<"Possitioning complete.\n\n"<<std::endl; 
+  
+
+  //Create protocol stack & assign IP address
+  std::cout<<"Protocol Stack and WiFi IP assigning.."<<std::endl; 
+  InternetStackHelper stack;
+  
+  char ip_t[] = "10.1.1.0" ; 
+  Ipv4AddressHelper address;
+  
+  for (int i = 0; i<9; i++){
+    //Protocol stack
+    stack.Install (STA[i]);
+    stack.Install (AP[i]);
+     
+    //Assign IP address
+    ip_t[5] = i+1 + '0';
+    
+    //AP_i
+    address.SetBase (ip_t, "255.255.255.0");
+    address.Assign (apDevices[i]);
+    address.Assign (staDevices[i]);
+    std::cout<<"Station "<< i <<" IPs set.."<< std::endl;     
+  }
+
+  //Csma IP assigning
+  std::cout<<"Csma IP assigning.."<<std::endl;
+  address.SetBase ("10.10.0.0", "255.255.255.0");
+  Ipv4InterfaceContainer csmaInterfaces;
+  csmaInterfaces =  address.Assign (csmaDevices);    
+  std::cout<<"IP assigning complete.\n\n"<<std::endl; 
+  
+  //Point to point ip address
+  /*std::cout<<"P2p IP assigning.."<<std::endl; 
+  stack.Install (main);
+  address.SetBase ("10.10.0.0", "255.255.255.0");
+  Ipv4InterfaceContainer p2pInterfaces;
+  p2pInterfaces = address.Assign (p2pDevices);    
+  std::cout<<"IP assigning complete.\n\n"<<std::endl; 
+  */  
+
+  //Echo messages (check model works)
+  std::cout<<"Establishing UDP echo server.."<<std::endl; 
+  UdpEchoServerHelper echoServer (9);
+  //Add echo client to the first device of every AP
+  
+  ApplicationContainer serverApps[9];
+  ApplicationContainer clientApps[9];
+  for (int i =0; i<9; i++){
+    serverApps[i] = echoServer.Install (STA[i].Get (0));
+    serverApps[i].Start (Seconds (1.0));
+    serverApps[i].Stop (Seconds (10.0));
+    
+    ip_t[5] = i+1 + '0';
+    std::cout<<"Station "<< i<<" node "<<ip_t<<" to "; 
+      
+    UdpEchoClientHelper echoClient (Ipv4Address(ip_t), 9);
+    echoClient.SetAttribute ("MaxPackets", UintegerValue (1));
+    echoClient.SetAttribute ("Interval", TimeValue (Seconds (1.0)));
+    echoClient.SetAttribute ("PacketSize", UintegerValue (1024));
+  
+    clientApps[i] = echoClient.Install (STA[i].Get (AP_nodes[i]-1));
+    clientApps[i].Start (Seconds (2.0+i));
+    clientApps[i].Stop (Seconds (10.0+i));
+    std::cout<<"device "<< int(AP_nodes[i]) <<std::endl;
+  }
+  std::cout<<"UDP echo server established.\n\n"<<std::endl; 
+  
+  //****************************************************************************
+  //******************* PROBLEM HERE!!! ****************************************
+  //Create routing table
+  std::cout<<"Populatng routing tables.."<<std::endl;
+  Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
+  std::cout<<"Routing tables ready.\n\n"<<std::endl; 
+  //****************************************************************************
+      
+   Simulator::Stop (Seconds (20.0));
+   std::cout<<"--------------------"<<std::endl; 
+   std::cout<<"Starting Simulator:"<<std::endl; 
+   std::cout<<"--------------------\n\n"<<std::endl; 
+
+   Simulator::Run ();
+   Simulator::Destroy ();
+  
+ return 0;
+}
