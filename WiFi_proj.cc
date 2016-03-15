@@ -334,7 +334,7 @@ int main (int argc, char *argv[]){
     clientApps[i] = echoClient.Install (STA[i].Get (AP_nodes[i]-1));
     clientApps[i].Start (Seconds (2.0+i));
     clientApps[i].Stop (Seconds (10.0+i));
-    std::cout<<"device "<< int(AP_nodes[i]) <<std::endl;
+    std::cout<<" station "<<i<<" device "<< int(AP_nodes[i]) <<std::endl;
   }
   std::cout<<"UDP echo server established.\n\n"<<std::endl; 
   
@@ -342,7 +342,7 @@ int main (int argc, char *argv[]){
   //******************* PROBLEM HERE!!! ****************************************
   //Create routing table
   std::cout<<"Populatng routing tables.."<<std::endl;
-  Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
+  //Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
   std::cout<<"Routing tables ready.\n\n"<<std::endl; 
   //****************************************************************************
       
