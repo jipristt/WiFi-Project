@@ -98,7 +98,7 @@ int main (int argc, char *argv[])
   cmd.AddValue ("tracing", "Enable pcap tracing", tracing);
   cmd.Parse (argc,argv);
   //Start program
-  std::cout<<"Beta 4 init.."<<std::endl;
+  std::cout<<"Beta 5 init.."<<std::endl;
   // No more than 250 wifi nodes!
   if (nWifi > 250|| nTest > 250)
     {
@@ -116,7 +116,7 @@ int main (int argc, char *argv[])
   NodeContainer wifiApNode[netSize];
   for(int i = 0; i<netSize; i++)
     {
-      if (i!=testAP)
+      if (i!=testAp)
         wifiStaNodes[i].Create (nWifi);
       else
         wifiStaNodes[i].Create (nTest);
